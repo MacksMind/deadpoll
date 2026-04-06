@@ -1,0 +1,105 @@
+# Example deadpoll config — translates a typical linkchecker setup to TOML.
+# Copy this file, fill in your cookie values, and adjust patterns to taste.
+
+[checking]
+ssl_verify = false     # Local certs are self-signed
+threads    = 10
+max_depth  = 0         # 0 = unlimited
+timeout    = "20s"
+
+[cookies]
+_session_id = "YOUR_SESSION_ID"
+
+[filtering]
+check_extern = false
+
+nofollow = [
+  # Editing an item from admin is too context-sensitive for the crawl queue
+  "/edit_item_personalization/finalize/",
+]
+
+ignore = [
+  'display_all=',
+  'view_all=',
+
+  # Performance / missing on dev machines
+  '/edoc_exteriors/',
+  '/high_res_pdf/',
+  '/user_images/',
+
+  # Session-mutating
+  'logout',
+  'masquerade',
+  'toggle_site',
+
+  # GET-mutating (broad)
+  'cancel',
+  'destroy',
+  'reset_response=',
+
+  # GET-mutating (admin orders)
+  '/enable_response/',
+  '/disable_response/',
+  '/recalculate_commission/',
+  '/delete_commission_log/',
+  '/update_order_date/',
+  '/change_household_greeting/',
+  '/mark_order_as_paid/',
+
+  # GET-mutating (admin users)
+  '/reset_account_conversion/',
+  '/cleanup_orphaned_subscriptions',
+  '/admin/users.*csv=',
+
+  # GET-mutating (cart)
+  '^.*/cart$',
+  '/cart/shipping',
+  '/cart/remove_item/',
+  '/cart/check_out',
+
+  # GET-mutating (order)
+  '/order/edit/',
+  '/order/enable_mailing_services',
+
+  # GET-mutating (approval)
+  '/approve-order',
+  '/reject-order',
+
+  # GET-mutating (user account)
+  '/my_account/delete_signature/',
+  '/my_account/delete_logo/',
+  '/my_account/delete_personal_interior/',
+  '/my_account/delete_payment_method/',
+  '/my_account/delete_return_address/',
+  '/my_account/delete_address/',
+  '/ac_unsubscribe/',
+
+  # GET-mutating (admin)
+  '/update_published/',
+  '/admin/categories/remove_product/',
+
+  # GET-mutating (schedules)
+  '/schedule/pause',
+  '/schedule/activate',
+
+  # GET-mutating (followup/packages)
+  '/followup/make_available/',
+  '/followup/remove_occasion/',
+  '/followup/remove_product/',
+  '/packages/remove_event/',
+  '/packages/remove_product/',
+
+  # Undocumented API
+  '/admin/posty/',
+
+  # GET-mutating (address book)
+  '/address_book_contacts/add_to_group',
+  '/address_book_contacts/remove_from_group',
+  '/address_book_contacts/update_selected_contacts',
+  '/address_book_groups/restore',
+]
+
+# Ignore page= pagination links, except inside /catalog/
+[[filtering.ignore_unless]]
+pattern = "page="
+unless  = "/catalog/"
