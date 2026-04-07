@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -227,7 +228,17 @@ func (cr *Crawler) Run(targetURL string) int {
 	})
 
 	c.OnError(func(r *colly.Response, err error) {
+		errMsg := err.Error()
+
+		// Colly v2.3.0 fires OnError for revisit attempts and
+		// redirects to disallowed domains. Neither is a real failure.
+		if strings.Contains(errMsg, "already visited") ||
+			strings.Contains(errMsg, "Forbidden domain") {
+			return
+		}
+
 		atomic.AddInt64(&cr.checked, 1)
+
 		atomic.AddInt64(&cr.errors, 1)
 
 		var parent string
@@ -238,7 +249,7 @@ func (cr *Crawler) Run(targetURL string) int {
 		result := Result{
 			URL:       r.Request.URL.String(),
 			Status:    r.StatusCode,
-			Error:     err.Error(),
+			Error:     errMsg,
 			Parent:    parent,
 			Timestamp: time.Now().Format(time.RFC3339),
 		}
