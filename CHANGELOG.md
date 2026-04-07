@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Check resource URLs: `<img>`, `<script>`, `<link>`, `<source>`, `<video>`, `<audio>`, `<object>`, `<embed>` (including `srcset` parsing)
+
 ## v0.1.2 — 2026-04-07
 
 - Add `--version` flag

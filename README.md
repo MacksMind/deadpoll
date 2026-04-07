@@ -30,6 +30,7 @@ Configuration is modeled after LinkChecker's [`linkcheckerrc`](https://linkcheck
 | **[authentication]** `loginurl` | — | Not implemented |
 | **[output]** section | — | deadpoll always outputs JSONL |
 | **[text/html/csv/xml/...]** | — | Single output format (JSONL) |
+| CSS `url()` checking | — | LinkChecker checks URLs in stylesheets; deadpoll does not |
 | Plugin sections | — | Not implemented |
 
 ## Install
@@ -116,16 +117,19 @@ unless  = "/catalog/"
 
 ## How it works
 
-deadpoll is an HTTP-level crawler, not a browser. It fetches pages, parses the HTML for `<a href="...">` links, and follows them. This makes it fast but means it:
+deadpoll is an HTTP-level crawler, not a browser. It fetches pages, parses the HTML for links, and follows them. This makes it fast but means it:
 
-- **Does** find all links present in the HTML, regardless of CSS visibility (hidden navs, collapsed menus, etc.)
+- **Does** find links and resource references in HTML (`<a>`, `<img>`, `<script>`, `<link>`, `<source>`, `<video>`, `<audio>`, `<object>`, `<embed>`, including `srcset` attributes)
+- **Does** find all elements regardless of CSS visibility (hidden navs, collapsed menus, etc.)
 - **Does not** execute JavaScript — links injected by JS at runtime will be missed
 - **Does not** check resources referenced in CSS (`background-image: url(...)`, `@font-face`, etc.)
+
+Only `<a href>` links are crawled (followed for further link discovery). All other resource URLs are checked but not crawled.
 
 ## Known limitations
 
 - **No JavaScript execution.** Single-page apps or JS-rendered navigation won't be crawled. This is a deliberate trade-off for speed.
-- **No CSS resource checking.** URLs inside stylesheets (`url()` references for images, fonts, etc.) are not currently checked. A prior Python-based tool caught these; adding CSS `url()` extraction is planned.
+- **No CSS resource checking.** URLs inside stylesheets (`url()` references for images, fonts, etc.) are not checked.
 - **No viewport/responsive awareness.** Since deadpoll works at the HTTP/HTML level rather than rendering pages, viewport size is irrelevant — it sees the full DOM regardless of breakpoints.
 
 ## License

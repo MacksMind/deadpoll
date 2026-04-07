@@ -175,16 +175,13 @@ func (cr *Crawler) Run(targetURL string) int {
 	// Parent tracker: records the first page that linked to each URL.
 	parentMap := &sync.Map{}
 
-	// Link extraction — skip nofollow pages.
-	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
+	// checkLink validates and visits a discovered URL.
+	// If followable is true, the target page will be crawled for more links.
+	// If false, it is only checked (HEAD-like behavior via nofollow).
+	checkLink := func(e *colly.HTMLElement, rawURL string, followable bool) {
 		currentURL := e.Request.URL.String()
 
-		// Don't extract links from a nofollow page.
-		if _, ok := nofollowSet.Load(currentURL); ok {
-			return
-		}
-
-		link := e.Request.AbsoluteURL(e.Attr("href"))
+		link := e.Request.AbsoluteURL(rawURL)
 		if link == "" {
 			return
 		}
@@ -204,11 +201,10 @@ func (cr *Crawler) Run(targetURL string) int {
 			if !cr.cfg.Filtering.CheckExtern {
 				return
 			}
-			// Check but don't crawl external links.
 			nofollowSet.Store(link, true)
 		}
 
-		if cr.isNofollow(link) {
+		if !followable || cr.isNofollow(link) {
 			nofollowSet.Store(link, true)
 		}
 
@@ -221,6 +217,54 @@ func (cr *Crawler) Run(targetURL string) int {
 		parentMap.LoadOrStore(link, currentURL)
 
 		e.Request.Visit(link)
+	}
+
+	// Crawlable links — follow into the page for more links.
+	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
+		// Don't extract links from a nofollow page.
+		if _, ok := nofollowSet.Load(e.Request.URL.String()); ok {
+			return
+		}
+		checkLink(e, e.Attr("href"), true)
+	})
+
+	// Resource links — check only, don't crawl.
+	c.OnHTML("img[src]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("src"), false)
+	})
+	c.OnHTML("script[src]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("src"), false)
+	})
+	c.OnHTML("link[href]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("href"), false)
+	})
+	c.OnHTML("source[src]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("src"), false)
+	})
+	c.OnHTML("source[srcset]", func(e *colly.HTMLElement) {
+		for _, src := range parseSrcset(e.Attr("srcset")) {
+			checkLink(e, src, false)
+		}
+	})
+	c.OnHTML("img[srcset]", func(e *colly.HTMLElement) {
+		for _, src := range parseSrcset(e.Attr("srcset")) {
+			checkLink(e, src, false)
+		}
+	})
+	c.OnHTML("video[src]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("src"), false)
+	})
+	c.OnHTML("video[poster]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("poster"), false)
+	})
+	c.OnHTML("audio[src]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("src"), false)
+	})
+	c.OnHTML("object[data]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("data"), false)
+	})
+	c.OnHTML("embed[src]", func(e *colly.HTMLElement) {
+		checkLink(e, e.Attr("src"), false)
 	})
 
 	c.OnResponse(func(r *colly.Response) {
@@ -279,6 +323,24 @@ func (cr *Crawler) Run(targetURL string) int {
 		return 1
 	}
 	return 0
+}
+
+// parseSrcset extracts URLs from an HTML srcset attribute.
+// Format: "url1 1x, url2 2x" or "url1 100w, url2 200w"
+func parseSrcset(srcset string) []string {
+	var urls []string
+	for _, candidate := range strings.Split(srcset, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		// Each candidate is "url [descriptor]" — we only need the URL.
+		parts := strings.Fields(candidate)
+		if len(parts) > 0 {
+			urls = append(urls, parts[0])
+		}
+	}
+	return urls
 }
 
 func (cr *Crawler) heartbeat(done chan struct{}) {

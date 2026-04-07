@@ -15,7 +15,7 @@ Configuration is modeled after [LinkChecker's `linkcheckerrc`](https://linkcheck
 - `crawler.go` — Core crawl logic: link extraction, filtering, error reporting
 - `config-example.toml` — Annotated config reference
 
-The crawler runs colly in async mode with configurable parallelism. Links are extracted from `<a href>` tags in raw HTML. Errors are written as JSONL.
+The crawler runs colly in async mode with configurable parallelism. `<a href>` links are crawled (followed for further discovery). Resource URLs (`<img>`, `<script>`, `<link>`, `<source>`, `<video>`, `<audio>`, `<object>`, `<embed>`, including `srcset`) are checked but not crawled. Errors are written as JSONL.
 
 ## Key design decisions
 
@@ -32,10 +32,6 @@ The crawler runs colly in async mode with configurable parallelism. Links are ex
 - Config defaults are set in `loadConfig()`, not scattered across the codebase.
 - CLI flags can override or supplement config file values (see `--cookie`).
 
-## Planned work
-
-- **CSS `url()` checking.** Extract and check URLs from stylesheets (`background-image`, `@font-face src`, `@import`, etc.). These should go through the same ignore/check pipeline as HTML links. Resolve URLs relative to the stylesheet location, not the referring page.
-
 ## Testing
 
-When adding behavioral changes, write tests first per project convention. The codebase does not yet have tests — adding them is welcome when practical.
+The codebase does not yet have tests. When adding behavioral changes, write tests first when practical.
