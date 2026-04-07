@@ -37,7 +37,7 @@ Configuration is modeled after LinkChecker's [`linkcheckerrc`](https://linkcheck
 Requires Go 1.23+.
 
 ```sh
-go install github.com/mack/deadpoll@latest
+go install github.com/MacksMind/deadpoll@latest
 ```
 
 Or build from source:

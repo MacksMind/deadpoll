@@ -1,4 +1,4 @@
-module github.com/mack/deadpoll
+module github.com/MacksMind/deadpoll
 
 go 1.23
 
