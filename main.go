@@ -4,8 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 )
+
+var version = "dev"
 
 func main() {
 	flag.Usage = func() {
@@ -51,10 +54,21 @@ Config file format (TOML):
 `)
 	}
 
+	showVersion := flag.Bool("version", false, "print version and exit")
 	configPath := flag.String("config", "", "path to TOML config file")
 	outputPath := flag.String("output", "deadpoll-results.jsonl", "path to output JSONL file (- for stdout)")
 	cookie := flag.String("cookie", "", "cookie to send with requests (name=value)")
 	flag.Parse()
+
+	if *showVersion {
+		if version == "dev" {
+			if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+				version = info.Main.Version
+			}
+		}
+		fmt.Println("deadpoll", version)
+		os.Exit(0)
+	}
 
 	if flag.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "Usage: deadpoll [--config config.toml] [--output results.jsonl] [--cookie name=value] <target-url>")
