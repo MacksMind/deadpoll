@@ -171,6 +171,9 @@ func (cr *Crawler) Run(targetURL string) int {
 	// nofollow tracker: URLs we'll check but won't extract links from.
 	nofollowSet := &sync.Map{}
 
+	// Parent tracker: records the first page that linked to each URL.
+	parentMap := &sync.Map{}
+
 	// Link extraction — skip nofollow pages.
 	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		currentURL := e.Request.URL.String()
@@ -213,8 +216,9 @@ func (cr *Crawler) Run(targetURL string) int {
 			atomic.AddInt64(&cr.discovered, 1)
 		}
 
-		// Set parent so children know who linked to them.
-		e.Request.Ctx.Put("parent", currentURL)
+		// Record the first parent that linked to this URL.
+		parentMap.LoadOrStore(link, currentURL)
+
 		e.Request.Visit(link)
 	})
 
@@ -226,11 +230,16 @@ func (cr *Crawler) Run(targetURL string) int {
 		atomic.AddInt64(&cr.checked, 1)
 		atomic.AddInt64(&cr.errors, 1)
 
+		var parent string
+		if v, ok := parentMap.Load(r.Request.URL.String()); ok {
+			parent = v.(string)
+		}
+
 		result := Result{
 			URL:       r.Request.URL.String(),
 			Status:    r.StatusCode,
 			Error:     err.Error(),
-			Parent:    r.Request.Ctx.Get("parent"),
+			Parent:    parent,
 			Timestamp: time.Now().Format(time.RFC3339),
 		}
 
