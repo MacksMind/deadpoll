@@ -25,13 +25,17 @@ Flags:
 		flag.PrintDefaults()
 		fmt.Fprint(os.Stderr, `
 Output format (one JSON object per line in the output file):
-  {"url":"...","status":404,"error":"...","parent":"...","timestamp":"..."}
 
-  url        the broken URL
-  status     HTTP status code (0 if connection failed)
-  error      description of the failure
-  parent     the page that linked to the broken URL
-  timestamp  when the error was recorded (RFC 3339)
+  Error:    {"type":"error","url":"...","status":404,"error":"...","parent":"...","timestamp":"..."}
+  Redirect: {"type":"redirect","url":"...","status":301,"redirect_url":"...","parent":"...","timestamp":"..."}
+
+  type          "error" or "redirect"
+  url           the URL that failed or redirected
+  status        HTTP status code (0 if connection failed)
+  error         description of the failure (errors only)
+  redirect_url  where the redirect points (redirects only)
+  parent        the page that linked to this URL
+  timestamp     when the finding was recorded (RFC 3339)
 
 Config file format (TOML):
   [checking]

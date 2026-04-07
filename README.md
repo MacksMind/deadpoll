@@ -76,19 +76,27 @@ deadpoll --output - https://example.com
 
 ## Output
 
-Errors are written as JSONL (one JSON object per line):
+Findings are written as JSONL (one JSON object per line). There are two types:
 
+**Errors** (broken links, timeouts, connection failures):
 ```json
-{"url":"https://example.com/missing","status":404,"error":"Not Found","parent":"https://example.com/page","timestamp":"2026-04-07T00:13:06-04:00"}
+{"type":"error","url":"https://example.com/missing","status":404,"error":"Not Found","parent":"https://example.com/page","timestamp":"2026-04-07T00:13:06-04:00"}
+```
+
+**Redirects** (301, 302, etc.):
+```json
+{"type":"redirect","url":"https://example.com/old-page","status":301,"redirect_url":"https://example.com/new-page","parent":"https://example.com/page","timestamp":"2026-04-07T00:13:06-04:00"}
 ```
 
 | Field | Description |
 |-------|-------------|
-| `url` | The broken URL |
+| `type` | `"error"` or `"redirect"` |
+| `url` | The URL that failed or redirected |
 | `status` | HTTP status code (0 if connection failed) |
-| `error` | Description of the failure |
-| `parent` | The page that linked to the broken URL |
-| `timestamp` | When the error was recorded (RFC 3339) |
+| `error` | Description of the failure (errors only) |
+| `redirect_url` | Where the redirect points (redirects only) |
+| `parent` | The page that linked to this URL |
+| `timestamp` | When the finding was recorded (RFC 3339) |
 
 A progress heartbeat prints to stderr every 5 seconds. Exit code is 0 for clean runs, 1 if any errors were found.
 

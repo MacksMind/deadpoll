@@ -18,13 +18,15 @@ import (
 	"github.com/gocolly/colly/v2/extensions"
 )
 
-// Result is a single error written as one JSONL line.
+// Result is a single finding written as one JSONL line.
 type Result struct {
-	URL       string `json:"url"`
-	Status    int    `json:"status,omitempty"`
-	Error     string `json:"error"`
-	Parent    string `json:"parent,omitempty"`
-	Timestamp string `json:"timestamp"`
+	Type        string `json:"type"`
+	URL         string `json:"url"`
+	Status      int    `json:"status,omitempty"`
+	RedirectURL string `json:"redirect_url,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Parent      string `json:"parent,omitempty"`
+	Timestamp   string `json:"timestamp"`
 }
 
 type compiledIgnoreUnless struct {
@@ -41,11 +43,13 @@ type Crawler struct {
 	nofollow     []*regexp.Regexp
 	host         string
 
-	mu         sync.Mutex
-	checked    int64
-	errors     int64
-	discovered int64
-	seen       sync.Map
+	mu             sync.Mutex
+	checked        int64
+	errors         int64
+	discovered     int64
+	seen           sync.Map
+	parentMap      sync.Map
+	redirectStatus sync.Map // URL -> HTTP status code (3xx)
 	start      time.Time
 }
 
@@ -141,11 +145,14 @@ func (cr *Crawler) Run(targetURL string) int {
 		c.MaxDepth = cr.cfg.Checking.MaxDepth
 	}
 
-	// TLS
-	c.WithTransport(&http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: !cr.cfg.Checking.SSLVerify,
+	// TLS, with a wrapper that records redirect status codes.
+	c.WithTransport(&redirectStatusTransport{
+		base: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: !cr.cfg.Checking.SSLVerify,
+			},
 		},
+		cr: cr,
 	})
 
 	c.SetRequestTimeout(cr.cfg.Checking.TimeoutDuration())
@@ -160,20 +167,21 @@ func (cr *Crawler) Run(targetURL string) int {
 
 	extensions.Referer(c)
 
-	// Cookies — set on every request.
-	if len(cr.cfg.Cookies) > 0 {
-		c.OnRequest(func(r *colly.Request) {
-			for name, value := range cr.cfg.Cookies {
-				r.Headers.Set("Cookie", name+"="+value)
-			}
-		})
-	}
+	// Track original URLs before redirects overwrite them.
+	origURLMap := &sync.Map{}
+
+	c.OnRequest(func(r *colly.Request) {
+		origURLMap.Store(r.ID, r.URL.String())
+		// Cookies.
+		for name, value := range cr.cfg.Cookies {
+			r.Headers.Set("Cookie", name+"="+value)
+		}
+	})
 
 	// nofollow tracker: URLs we'll check but won't extract links from.
 	nofollowSet := &sync.Map{}
 
-	// Parent tracker: records the first page that linked to each URL.
-	parentMap := &sync.Map{}
+	// Parent tracker is cr.parentMap (on the struct so the transport can access it).
 
 	// checkLink validates and visits a discovered URL.
 	// If followable is true, the target page will be crawled for more links.
@@ -214,7 +222,7 @@ func (cr *Crawler) Run(targetURL string) int {
 		}
 
 		// Record the first parent that linked to this URL.
-		parentMap.LoadOrStore(link, currentURL)
+		cr.parentMap.LoadOrStore(link, currentURL)
 
 		e.Request.Visit(link)
 	}
@@ -269,15 +277,71 @@ func (cr *Crawler) Run(targetURL string) int {
 
 	c.OnResponse(func(r *colly.Response) {
 		atomic.AddInt64(&cr.checked, 1)
+
+		// Detect redirects: if the final URL differs from the original,
+		// a redirect was followed.
+		if orig, ok := origURLMap.LoadAndDelete(r.Request.ID); ok {
+			origURL := orig.(string)
+			finalURL := r.Request.URL.String()
+			if origURL != finalURL {
+				var parent string
+				if v, ok := cr.parentMap.Load(origURL); ok {
+					parent = v.(string)
+				}
+				status := 0
+				if s, ok := cr.redirectStatus.LoadAndDelete(origURL); ok {
+					status = s.(int)
+				}
+				result := Result{
+					Type:        "redirect",
+					URL:         origURL,
+					Status:      status,
+					RedirectURL: finalURL,
+					Parent:      parent,
+					Timestamp:   time.Now().Format(time.RFC3339),
+				}
+				cr.mu.Lock()
+				json.NewEncoder(cr.output).Encode(result)
+				cr.mu.Unlock()
+			}
+		}
 	})
 
 	c.OnError(func(r *colly.Response, err error) {
 		errMsg := err.Error()
 
 		// Colly v2.3.0 fires OnError for revisit attempts and
-		// redirects to disallowed domains. Neither is a real failure.
+		// redirects to disallowed domains.
 		if strings.Contains(errMsg, "already visited") ||
 			strings.Contains(errMsg, "Forbidden domain") {
+			// These errors occur when a redirect target is already visited
+			// or on a forbidden domain. The original URL (before redirect)
+			// is still worth logging as a redirect.
+			origURL := r.Request.URL.String()
+			var parent string
+			if v, ok := cr.parentMap.Load(origURL); ok {
+				parent = v.(string)
+			}
+			// Extract redirect target from the error message.
+			// Format: Get "/new": "http://host/new" already visited
+			// Format: Not following redirect to "http://host/...": Forbidden domain
+			if redirectTarget := extractRedirectTarget(errMsg); redirectTarget != "" {
+				status := 0
+				if s, ok := cr.redirectStatus.LoadAndDelete(origURL); ok {
+					status = s.(int)
+				}
+				result := Result{
+					Type:        "redirect",
+					URL:         origURL,
+					Status:      status,
+					RedirectURL: redirectTarget,
+					Parent:      parent,
+					Timestamp:   time.Now().Format(time.RFC3339),
+				}
+				cr.mu.Lock()
+				json.NewEncoder(cr.output).Encode(result)
+				cr.mu.Unlock()
+			}
 			return
 		}
 
@@ -286,11 +350,12 @@ func (cr *Crawler) Run(targetURL string) int {
 		atomic.AddInt64(&cr.errors, 1)
 
 		var parent string
-		if v, ok := parentMap.Load(r.Request.URL.String()); ok {
+		if v, ok := cr.parentMap.Load(r.Request.URL.String()); ok {
 			parent = v.(string)
 		}
 
 		result := Result{
+			Type:      "error",
 			URL:       r.Request.URL.String(),
 			Status:    r.StatusCode,
 			Error:     errMsg,
@@ -323,6 +388,48 @@ func (cr *Crawler) Run(targetURL string) int {
 		return 1
 	}
 	return 0
+}
+
+// redirectStatusTransport wraps an http.RoundTripper to record 3xx status
+// codes. It does not handle redirects — Go's http.Client and Colly do that.
+// It only stores the status so redirect log entries can include 301 vs 302.
+type redirectStatusTransport struct {
+	base http.RoundTripper
+	cr   *Crawler
+}
+
+func (t *redirectStatusTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		t.cr.redirectStatus.Store(req.URL.String(), resp.StatusCode)
+	}
+	return resp, err
+}
+
+// extractRedirectTarget pulls the redirect destination URL from Colly's
+// "already visited" or "Forbidden domain" error messages.
+// Returns empty string if no URL can be extracted.
+func extractRedirectTarget(errMsg string) string {
+	// "already visited" format:
+	//   Get "/path": "http://host/path" already visited
+	// "Forbidden domain" format:
+	//   Not following redirect to "http://host/path": Forbidden domain
+	//
+	// In both cases, the last quoted URL before the error suffix is the target.
+	// We find the last "http(s)://..." in quotes.
+	idx := strings.LastIndex(errMsg, "\"http")
+	if idx == -1 {
+		return ""
+	}
+	rest := errMsg[idx+1:]
+	end := strings.Index(rest, "\"")
+	if end == -1 {
+		return ""
+	}
+	return rest[:end]
 }
 
 // parseSrcset extracts URLs from an HTML srcset attribute.

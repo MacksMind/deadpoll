@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Check resource URLs: `<img>`, `<script>`, `<link>`, `<source>`, `<video>`, `<audio>`, `<object>`, `<embed>` (including `srcset` parsing)
+- Log redirects with `type: "redirect"`, original URL, target URL, HTTP status (301/302), and parent
+- Add `type` field to JSONL output (`"error"` or `"redirect"`)
+- Add test suite (redirect detection, already-visited redirects, 404s, ignore patterns, image link checking)
 
 ## v0.1.2 — 2026-04-07
 

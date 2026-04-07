@@ -24,14 +24,15 @@ The crawler runs colly in async mode with configurable parallelism. `<a href>` l
 - **The `seen` sync.Map is not redundant with colly's internal dedup.** Colly deduplicates visits internally, but doesn't expose the count. The `seen` map tracks unique discovered URLs so the heartbeat can report a meaningful queue depth (`discovered - checked`). Without it, the counter inflates with every `<a>` tag rather than unique URLs. Do not remove it thinking colly handles this — colly deduplicates requests, but we need the count.
 - **AllowedDomains is a safety net.** When `check_extern` is false, `colly.AllowedDomains` is set to the target hostname. This is belt-and-suspenders — the `OnHTML` callback already skips external links, but `AllowedDomains` ensures the crawler cannot escape the target domain even if the filtering logic has a bug (e.g., via redirects or other URL discovery paths). Do not remove this guard.
 - **Filtering is regex-based (RE2, not PCRE).** Go's `regexp` package uses RE2 syntax — no lookaheads or lookbehinds. This is why `ignore_unless` exists: it replaces patterns like `^(?!.*/catalog/).*page=` that cannot be expressed in RE2. When helping users write filter patterns, remember this constraint. New filter types should follow the same compile-once-at-startup pattern.
+- **Redirect detection uses two paths.** Colly's `OnResponse` catches redirects where the target was not previously visited (original URL stashed in `OnRequest` via `origURLMap`, compared to final URL). Colly's `OnError` catches redirects where the target was already visited or on a forbidden domain (redirect target extracted from the error message). The `redirectStatusTransport` wraps the HTTP transport to record 3xx status codes (301 vs 302) since neither Colly callback exposes the intermediate status.
 
 ## Conventions
 
-- Output goes to a JSONL file (or stdout). One `Result` struct per error.
+- Output goes to a JSONL file (or stdout). One `Result` struct per finding (`"error"` or `"redirect"`).
 - Progress/diagnostics go to stderr.
 - Config defaults are set in `loadConfig()`, not scattered across the codebase.
 - CLI flags can override or supplement config file values (see `--cookie`).
 
 ## Testing
 
-The codebase does not yet have tests. When adding behavioral changes, write tests first when practical.
+Tests are in `crawler_test.go`. They use `net/http/httptest` to spin up local servers with known behavior (redirects, 404s, etc.) and verify the JSONL output. Run with `go test -race ./...`. When adding behavioral changes, write tests first when practical.
