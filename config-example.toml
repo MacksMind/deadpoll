@@ -1,0 +1,62 @@
+# Example deadpoll config.
+# Copy this file, adjust patterns to taste, and pass via --config.
+
+[checking]
+ssl_verify = false     # Local/dev certs are often self-signed
+threads    = 10
+max_depth  = 0         # 0 = unlimited
+timeout    = "20s"
+
+[cookies]
+_session_id = "YOUR_SESSION_ID"
+
+[filtering]
+check_extern = false
+
+# All patterns below are RE2 regex (Go's regexp package).
+# No lookaheads/lookbehinds — use [[filtering.ignore_unless]] for conditional patterns.
+
+nofollow = [
+  # Pages that require specific state or context to render properly
+  "/admin/wizards/",
+]
+
+ignore = [
+  # Pagination and bulk-view params
+  'display_all=',
+  'view_all=',
+
+  # Large or generated assets not worth checking
+  '/generated_assets/',
+  '/bulk_downloads/',
+
+  # Session-mutating actions (must not be triggered by a GET crawl)
+  'logout',
+  'masquerade',
+
+  # GET-mutating endpoints — destructive or state-changing
+  'cancel',
+  'destroy',
+
+  # Admin actions that modify data
+  '/admin/enable/',
+  '/admin/disable/',
+  '/admin/delete/',
+  '/admin/update/',
+
+  # Cart and checkout
+  '/cart/remove_item/',
+  '/cart/check_out',
+
+  # Account management
+  '/my_account/delete_',
+
+  # Approval workflows
+  '/approve',
+  '/reject',
+]
+
+# Ignore page= pagination links, except inside /catalog/
+[[filtering.ignore_unless]]
+pattern = "page="
+unless  = "/catalog/"
